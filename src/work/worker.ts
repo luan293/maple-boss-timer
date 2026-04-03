@@ -10,7 +10,7 @@ let timeRectReset = 0;
 let hpRectReset = 0;
 
 self.onmessage = (param: MessageEvent<ISendMessage>) => {
-    const { fmaSoon, frameBuffer, frameWidth, frameHeight, timeRect, hpRect } = param.data;
+    const { fmaSoon, frameBuffer, frameWidth, frameHeight, timeRect, hpRect, detectRedPattern } = param.data;
     const frame = new Uint8Array(frameBuffer);
     let timeArea = timeRect;
     let hpArea = hpRect;
@@ -140,58 +140,61 @@ self.onmessage = (param: MessageEvent<ISendMessage>) => {
         }
     }
     // Look for the "Red" color scheme to detect the hourglass reset.
-    const colorDepth = 5;
-    const colorInterval = 255 / (colorDepth - 1);
+    // Only runs for bosses that use this mechanic (detectRedPattern = true).
     let patternRect;
     let pattern = 0;
-    const v = new Array(frameWidth);
-    for (let x = 0; x < frameWidth; x++) {
-        v[x] = new Array(frameHeight).fill(false);
-    }
-    for (let x = 0; x < frameWidth; x++) {
-        for (let y = 0; y < frameHeight; y++) {
-            if (!v[x][y]) {
-                v[x][y] = true;
-                let pos = (x + y * frameWidth) * 4;
-                let r = Math.floor((frame[pos] / 256) * colorDepth) * colorInterval;
-                let g = Math.floor((frame[pos + 1] / 256) * colorDepth) * colorInterval;
-                let b = Math.floor((frame[pos + 2] / 256) * colorDepth) * colorInterval;
-                if (r === 255 && g + b === 0) {
-                    let count = 0;
-                    let area = [x, x, y, y];
-                    let queue = [[x, y]];
-                    while (queue.length > 0) {
-                        const q = queue.shift();
-                        if (!q) {
-                            continue;
-                        }
-                        pos = (q[0] + q[1] * frameWidth) * 4;
-                        r = Math.floor((frame[pos] / 256) * colorDepth) * colorInterval;
-                        g = Math.floor((frame[pos + 1] / 256) * colorDepth) * colorInterval;
-                        b = Math.floor((frame[pos + 2] / 256) * colorDepth) * colorInterval;
-                        if (r === 255 && g + b === 0) {
-                            count++;
-                            area[0] = Math.min(area[0], q[0]);
-                            area[1] = Math.max(area[1], q[0]);
-                            area[2] = Math.min(area[2], q[1]);
-                            area[3] = Math.max(area[3], q[1]);
-                            for (let i = -1; i <= 1; i++) {
-                                for (let j = -1; j <= 1; j++) {
-                                    if (0 <= q[0] + i && q[0] + i < frameWidth && 0 <= q[1] + j && q[1] + j < frameHeight && !v[q[0] + i][q[1] + j]) {
-                                        v[q[0] + i][q[1] + j] = true;
-                                        queue.push([q[0] + i, q[1] + j]);
+    if (detectRedPattern) {
+        const colorDepth = 5;
+        const colorInterval = 255 / (colorDepth - 1);
+        const v = new Array(frameWidth);
+        for (let x = 0; x < frameWidth; x++) {
+            v[x] = new Array(frameHeight).fill(false);
+        }
+        for (let x = 0; x < frameWidth; x++) {
+            for (let y = 0; y < frameHeight; y++) {
+                if (!v[x][y]) {
+                    v[x][y] = true;
+                    let pos = (x + y * frameWidth) * 4;
+                    let r = Math.floor((frame[pos] / 256) * colorDepth) * colorInterval;
+                    let g = Math.floor((frame[pos + 1] / 256) * colorDepth) * colorInterval;
+                    let b = Math.floor((frame[pos + 2] / 256) * colorDepth) * colorInterval;
+                    if (r === 255 && g + b === 0) {
+                        let count = 0;
+                        let area = [x, x, y, y];
+                        let queue = [[x, y]];
+                        while (queue.length > 0) {
+                            const q = queue.shift();
+                            if (!q) {
+                                continue;
+                            }
+                            pos = (q[0] + q[1] * frameWidth) * 4;
+                            r = Math.floor((frame[pos] / 256) * colorDepth) * colorInterval;
+                            g = Math.floor((frame[pos + 1] / 256) * colorDepth) * colorInterval;
+                            b = Math.floor((frame[pos + 2] / 256) * colorDepth) * colorInterval;
+                            if (r === 255 && g + b === 0) {
+                                count++;
+                                area[0] = Math.min(area[0], q[0]);
+                                area[1] = Math.max(area[1], q[0]);
+                                area[2] = Math.min(area[2], q[1]);
+                                area[3] = Math.max(area[3], q[1]);
+                                for (let i = -1; i <= 1; i++) {
+                                    for (let j = -1; j <= 1; j++) {
+                                        if (0 <= q[0] + i && q[0] + i < frameWidth && 0 <= q[1] + j && q[1] + j < frameHeight && !v[q[0] + i][q[1] + j]) {
+                                            v[q[0] + i][q[1] + j] = true;
+                                            queue.push([q[0] + i, q[1] + j]);
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
-                    const ratio = count / (frameWidth * frameHeight);
-                    if (ratio > 0.01 && fmaSoon) {
-                        pattern += ratio;
-                        if (!patternRect) {
-                            patternRect = [];
+                        const ratio = count / (frameWidth * frameHeight);
+                        if (ratio > 0.01 && fmaSoon) {
+                            pattern += ratio;
+                            if (!patternRect) {
+                                patternRect = [];
+                            }
+                            patternRect.push([area[0], area[2], area[1] - area[0] + 1, area[3] - area[2] + 1]);
                         }
-                        patternRect.push([area[0], area[2], area[1] - area[0] + 1, area[3] - area[2] + 1]);
                     }
                 }
             }

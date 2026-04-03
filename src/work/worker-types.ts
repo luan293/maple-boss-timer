@@ -53,4 +53,9 @@ export interface ISendMessage {
      * The coordinates of the health bar on the screen.
      */
     hpRect: number[] | null;
+    /**
+     * Whether to run red-pixel flood-fill to detect the hourglass mechanic.
+     * Set to false for bosses that do not use this mechanic.
+     */
+    detectRedPattern: boolean;
 }

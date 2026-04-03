@@ -5,6 +5,8 @@ import { SpeechManager } from "./main/speech";
 import { IRecvMessage } from "./work/worker-types";
 import FrameWorker from "./work/worker?worker";
 import { I18n } from "i18n-js";
+import { BOSSES } from "./bosses/index";
+import type { BossConfig } from "./bosses/types";
 
 const i18n = new I18n({
     en: enUS,
@@ -12,6 +14,8 @@ const i18n = new I18n({
 });
 i18n.availableLocales = ["en", "ko-KR"];
 // i18n.locale = "ko-KR";
+
+const bossOptions = BOSSES.map((b, i) => `<option value="${i}">${b.name}</option>`).join("");
 
 document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
   <video id="video" autoplay playsinline></video>
@@ -22,7 +26,11 @@ document.querySelector<HTMLDivElement>("#app")!.innerHTML = `
       <li><button id="streaming_button">${i18n.translate("screen-share")}</button> ${i18n.translate("how-to-use-desc-2")}</li>
       <canvas id="output_canvas" width="250" height="250"></canvas>
       <button id="pip_button">${i18n.translate("pip-mode")}</button>
-      <li>${i18n.translate("how-to-use-desc-3")}</li>
+      <li>
+        ${i18n.translate("how-to-use-desc-3")}
+        &nbsp;
+        <select id="boss_select">${bossOptions}</select>
+      </li>
       <li>${i18n.translate("how-to-use-desc-4")}</li>
   </ol>
   <div id="monitoring">
@@ -42,6 +50,7 @@ const canvas = document.getElementById("canvas") as HTMLCanvasElement;
 const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
 const outputCanvas = document.getElementById("output_canvas") as HTMLCanvasElement;
 const outputCtx = outputCanvas.getContext("2d") as CanvasRenderingContext2D;
+const bossSelect = document.getElementById("boss_select") as HTMLSelectElement;
 const outputCanvasBg = new Image();
 outputCanvasBg.src = new URL("./assets/output_canvas_bg.png", import.meta.url).href;
 const unmuteImg = new Image();
@@ -66,13 +75,24 @@ let hp: number | null;
 
 let isStreaming = false;
 let fmaSoon = false;
-let patternCycles = [
-    [180, 150],
-    [150, 125, 100],
-];
-let patternTime = 1784;
+
+let selectedBoss: BossConfig = BOSSES[0];
+let patternTime = selectedBoss.defaultPatternTime;
 let patternHp = 100;
-let difficulty = 1;
+let difficulty = 0;
+
+function resetBossState() {
+    timeRect = null;
+    hpRect = null;
+    timeResult = null;
+    hpResult = null;
+    time = null;
+    hp = null;
+    fmaSoon = false;
+    patternTime = selectedBoss.defaultPatternTime;
+    patternHp = 100;
+    difficulty = 0;
+}
 
 if (typeof Worker !== undefined && navigator.mediaDevices) {
     worker = new FrameWorker();
@@ -124,11 +144,17 @@ if (typeof Worker !== undefined && navigator.mediaDevices) {
             xBound = 90;
         }
         if (x < xBound && y < 40) {
-            // Bro what????????
-            difficulty = Math.floor(x / xDivide);
+            const clicked = Math.floor(x / xDivide);
+            if (clicked < selectedBoss.difficulties.length) {
+                difficulty = clicked;
+            }
         } else if (100 < x && x < 145 && 200 < y && y < 245) {
             speechManager?.toggleMute();
         }
+    });
+    bossSelect.addEventListener("change", function () {
+        selectedBoss = BOSSES[parseInt(bossSelect.value)];
+        resetBossState();
     });
     pipButton.addEventListener("click", function () {
         if (document.pictureInPictureElement) {
@@ -149,6 +175,7 @@ if (typeof Worker !== undefined && navigator.mediaDevices) {
     document.body.innerHTML = "";
     alert(i18n.translate("browser-not-supported"));
 }
+
 function startStream() {
     if (isStreaming) {
         return;
@@ -202,6 +229,7 @@ function sendStream() {
             frameHeight: canvas.height,
             timeRect,
             hpRect,
+            detectRedPattern: selectedBoss.detectRedPattern,
         },
         [frameBuffer]
     );
@@ -214,46 +242,41 @@ function main() {
     if (speechManager) {
         outputCtx.drawImage(!speechManager.isMuted() ? unmuteImg : muteImg, 108, 208, 32, 32);
     }
+
+    // Draw difficulty selector for the selected boss
     outputCtx.font = "15pt Nanum Gothic";
-    outputCtx.fillStyle = difficulty ? "#FFFFFF40" : "#FFFFFF";
-    outputCtx.fillText(i18n.translate("difficulty.normal"), 5, 12);
-    outputCtx.fillStyle = difficulty ? "#FFFFFF" : "#FFFFFF40";
-    let spacing = 75;
-    if (i18n.locale.includes("ko")) {
-        spacing = 50;
-    }
-    outputCtx.fillText(i18n.translate("difficulty.hard"), spacing, 12);
+    const spacing = i18n.locale.includes("ko") ? 50 : 70;
+    selectedBoss.difficulties.forEach((d, i) => {
+        outputCtx.fillStyle = difficulty === i ? "#FFFFFF" : "#FFFFFF40";
+        outputCtx.fillText(d.label, 5 + i * spacing, 12);
+    });
+
     if (!time || !hp) {
         return;
     }
+
+    const currentDiff = selectedBoss.difficulties[difficulty];
     let currTime = time - Math.floor((Date.now() - timeStamp) / 1000);
+
+    // Determine which phase we're in based on HP thresholds
     let patternCycle = 0;
-    let uncertain = false;
-    if (difficulty) {
-        if (patternHp === 61 || patternHp === 31) {
-            uncertain = true;
-        }
-        if (patternHp < 31) {
-            patternCycle = 2;
-        } else if (patternHp < 61) {
-            patternCycle = 1;
-        }
-    } else {
-        if (patternHp === 51) {
-            uncertain = true;
-        }
-        if (patternHp < 51) {
-            patternCycle = 1;
-        }
+    for (const threshold of currentDiff.hpThresholds) {
+        if (patternHp < threshold) patternCycle++;
     }
+
+    // Uncertain when HP is exactly on a threshold boundary
+    const uncertain = currentDiff.hpThresholds.some(t => Math.round(patternHp) === t);
+
     outputCtx.textAlign = "center";
-    const estimatedTime = [patternTime - patternCycles[difficulty][patternCycle]];
-    if (uncertain) {
-        let nextEstimatedTime = estimatedTime[0] + (patternCycles[difficulty][0] - patternCycles[difficulty][1]);
+    const estimatedTime = [patternTime - currentDiff.patternIntervals[patternCycle]];
+    if (uncertain && patternCycle + 1 < currentDiff.patternIntervals.length) {
+        const altInterval = currentDiff.patternIntervals[patternCycle + 1];
+        const nextEstimatedTime = estimatedTime[0] + (currentDiff.patternIntervals[patternCycle] - altInterval);
         if (currTime - nextEstimatedTime >= 0) {
             estimatedTime.push(nextEstimatedTime);
         }
     }
+
     for (let i = 0; i < estimatedTime.length; i++) {
         if (estimatedTime[i] < 0) {
             continue;
@@ -265,7 +288,7 @@ function main() {
             } else if (remainingTime > 0) {
                 if (remainingTime <= 10 && !fmaSoon) {
                     fmaSoon = true;
-                } else if(remainingTime > 10 && fmaSoon) {
+                } else if (remainingTime > 10 && fmaSoon) {
                     fmaSoon = false;
                 }
                 if (remainingTime <= 10) {
@@ -304,6 +327,7 @@ function main() {
         outputCtx.fillText(txt, 125, 90 + (estimatedTime.length > 1 ? (i === 0 ? 35 : -45) : 0));
         outputCtx.strokeText(txt, 125, 90 + (estimatedTime.length > 1 ? (i === 0 ? 35 : -45) : 0));
     }
+
     outputCtx.font = "10pt Nanum Gothic";
     outputCtx.textAlign = "left";
     outputCtx.fillStyle = !timeResult ? "#FFFFFF40" : "#FFFFFF";
