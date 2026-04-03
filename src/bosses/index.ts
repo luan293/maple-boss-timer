@@ -1,4 +1,5 @@
 import { HILLA } from "./hilla";
+import { WILL } from "./will";
 import type { BossConfig } from "./types";
 
 export type { BossConfig };
@@ -9,6 +10,7 @@ export type { BossConfig };
  */
 export const BOSSES: BossConfig[] = [
     HILLA,
+    WILL,
     // Add more bosses below, e.g.:
     // KALOS,
     // SEREN,

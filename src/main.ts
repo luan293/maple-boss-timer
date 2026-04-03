@@ -251,29 +251,44 @@ function main() {
         outputCtx.fillText(d.label, 5 + i * spacing, 12);
     });
 
-    if (!time || !hp) {
+    if (!time) {
+        return;
+    }
+
+    // HP-based bosses additionally require hp to be detected
+    if (!hp && !selectedBoss.fixedPattern) {
         return;
     }
 
     const currentDiff = selectedBoss.difficulties[difficulty];
     let currTime = time - Math.floor((Date.now() - timeStamp) / 1000);
 
-    // Determine which phase we're in based on HP thresholds
-    let patternCycle = 0;
-    for (const threshold of currentDiff.hpThresholds) {
-        if (patternHp < threshold) patternCycle++;
-    }
-
-    // Uncertain when HP is exactly on a threshold boundary
-    const uncertain = currentDiff.hpThresholds.some(t => Math.round(patternHp) === t);
-
     outputCtx.textAlign = "center";
-    const estimatedTime = [patternTime - currentDiff.patternIntervals[patternCycle]];
-    if (uncertain && patternCycle + 1 < currentDiff.patternIntervals.length) {
-        const altInterval = currentDiff.patternIntervals[patternCycle + 1];
-        const nextEstimatedTime = estimatedTime[0] + (currentDiff.patternIntervals[patternCycle] - altInterval);
-        if (currTime - nextEstimatedTime >= 0) {
-            estimatedTime.push(nextEstimatedTime);
+    let estimatedTime: number[];
+
+    if (selectedBoss.fixedPattern) {
+        // Pure time-based mechanic: calculate next event from current fight timer
+        const { firstEventAt, intervalSeconds } = selectedBoss.fixedPattern;
+        const elapsedSinceFirst = firstEventAt - currTime;
+        const n = Math.max(0, Math.ceil(elapsedSinceFirst / intervalSeconds));
+        estimatedTime = [firstEventAt - n * intervalSeconds];
+    } else {
+        // HP-threshold based mechanic (Hilla style)
+        let patternCycle = 0;
+        for (const threshold of currentDiff.hpThresholds) {
+            if (patternHp < threshold) patternCycle++;
+        }
+
+        // Uncertain when HP is exactly on a threshold boundary
+        const uncertain = currentDiff.hpThresholds.some(t => Math.round(patternHp) === t);
+
+        estimatedTime = [patternTime - currentDiff.patternIntervals[patternCycle]];
+        if (uncertain && patternCycle + 1 < currentDiff.patternIntervals.length) {
+            const altInterval = currentDiff.patternIntervals[patternCycle + 1];
+            const nextEstimatedTime = estimatedTime[0] + (currentDiff.patternIntervals[patternCycle] - altInterval);
+            if (currTime - nextEstimatedTime >= 0) {
+                estimatedTime.push(nextEstimatedTime);
+            }
         }
     }
 
