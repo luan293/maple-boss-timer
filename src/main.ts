@@ -298,7 +298,7 @@ function main() {
         }
         const remainingTime = Math.max(0, currTime - estimatedTime[i]);
         if (i === estimatedTime.length - 1) {
-            if (!hpRect && time > 2 && hp > 2) {
+            if (!hpRect && time > 2 && (hp ?? 0) > 2) {
                 speechManager?.speak(i18n.translate("hp-not-recognized"), true);
             } else if (remainingTime > 0) {
                 if (remainingTime <= 10 && !fmaSoon) {
@@ -354,5 +354,5 @@ function main() {
     outputCtx.textAlign = "right";
     outputCtx.fillStyle = !hpResult ? "#FFFFFF40" : "#FFFFFF";
     outputCtx.fillText(i18n.translate("remaining-hp"), 245, 215);
-    outputCtx.fillText(hp + "%", 245, 230);
+    outputCtx.fillText((hp ?? "-") + "%", 245, 230);
 }
